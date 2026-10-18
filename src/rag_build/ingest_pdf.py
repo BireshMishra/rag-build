@@ -4,7 +4,14 @@ import datetime
 
 from pathlib import Path
 from pypdf import PdfReader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
 
+
+splitter = RecursiveCharacterTextSplitter(
+    chunk_size=500,
+    chunk_overlap=50,
+    length_function=len
+)
 
 def ingest(file_path: str):
     file_name = Path(file_path).stem
@@ -15,7 +22,10 @@ def ingest(file_path: str):
 
     for page_num, page in enumerate(reader.pages):
         text = page.extract_text()
-        dataset += create_chunks(file_name, page_num, text, 500, 50)
+        chunks = splitter.split_text(text)
+        for chunk in chunks:
+            dataset.append({"file":file_name, "page":page_num, "chunk":chunk})
+        #dataset += create_chunks(file_name, page_num, text, 500, 50)
     save_dataset(file_name, dataset)
 
 def create_chunks(file_name: str, page_num: int, text: str, chunk_size: int
@@ -23,9 +33,12 @@ def create_chunks(file_name: str, page_num: int, text: str, chunk_size: int
     print(f"creating chunk for page: {page_num}")
     dataset=[]
     text_len = len(text)
-    for i  in range(text_len//chunk_size + 1):
-        chunk = text[max(0, i * chunk_size - overlap_size): (i+1) * chunk_size + overlap_size]
-        dataset.append({"file":file_name, "page":page_num, "chunk":chunk})
+    step = chunk_size - overlap_size
+    for i  in range(0, text_len, chunk_size):
+        chunk = text[ i * step: i*step + chunk_size]
+
+        if chunk.strip():
+            dataset.append({"file":file_name, "page":page_num, "chunk":chunk})
     print(f"created chunks for page: {page_num}")
     return dataset
 
