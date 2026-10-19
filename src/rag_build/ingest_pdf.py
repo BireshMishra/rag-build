@@ -21,10 +21,12 @@ def ingest(file_path: str):
 
     for page_num, page in enumerate(reader.pages):
         text = page.extract_text()
-        
+
         chunks = text_splitter.split_text(text)
+        chunk_id = 0
         for chunk in chunks:
-            dataset.append({"file":file_name, "page":page_num, "chunk":chunk})
+            chunk_id += 1
+            dataset.append({"file":file_name, "page":page_num, "chunk_id": chunk_id, "chunk":chunk})
         #dataset += create_chunks(file_name, page_num, text, 500, 50)
     save_dataset(file_name, dataset)
 
