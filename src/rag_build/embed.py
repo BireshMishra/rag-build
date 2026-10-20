@@ -49,10 +49,15 @@ def read_and_save_chunks(file_path: str):
     print(f"{file_path}: {len(ids)} chunks")
     for start in range(0, len(ids), BATCH_SIZE):
         end = start + BATCH_SIZE
+        batch_ids = ids[start:end]
+        existing = set(collection.get(ids=batch_ids, include=[])["ids"])
+        new = [i for i, chunk_id in enumerate(batch_ids) if chunk_id not in existing]
+        if not new:
+            continue
         collection.upsert(
-            ids=ids[start:end],
-            documents=documents[start:end],
-            metadatas=metadatas[start:end],
+            ids=[batch_ids[i] for i in new],
+            documents=[documents[start + i] for i in new],
+            metadatas=[metadatas[start + i] for i in new],
         )
 
 
