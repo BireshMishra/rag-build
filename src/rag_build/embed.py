@@ -5,12 +5,9 @@ import json
 from chromadb.utils import embedding_functions
 from pathlib import Path
 from dotenv import load_dotenv
-from cachetools import cached, TTLCache
 
 
 load_dotenv()
-
-cache_storage = TTLCache(maxsize=10000, ttl=600)
 
 DEFAULT_DB_PATH = "./chroma_db"
 DEFAULT_COLLECTION = "my_voyage_collection"
@@ -37,7 +34,7 @@ def is_folder_empty(folder_path: str) -> bool:
 
 BATCH_SIZE = 100
 
-def read_and_save_chunks(collection, file_path: str):
+def read_chunks(file_path: str):
     ids, documents, metadatas = [], [], []
     with open(file_path, 'r', encoding="utf-8") as file:
         for line in file:
@@ -50,8 +47,9 @@ def read_and_save_chunks(collection, file_path: str):
                     "page": chunk_json.get("page"),
                     "chunk_id": chunk_json.get("chunk_id"),
                 })
+    return ids, documents, metadatas
 
-    print(f"{file_path}: {len(ids)} chunks")
+def store_chunks(collection, ids, documents, metadatas):
     for start in range(0, len(ids), BATCH_SIZE):
         end = start + BATCH_SIZE
         batch_ids = ids[start:end]
@@ -65,16 +63,14 @@ def read_and_save_chunks(collection, file_path: str):
             metadatas=[metadatas[start + i] for i in new],
         )
 
-
-#@cached(cache_storage)
 def save_embeddings(collection, file_path: str):
     if not is_folder_empty(file_path):
         return
 
     for chunk_file in Path(file_path).glob("*.jsonl"):
-        data = read_and_save_chunks(collection, chunk_file)
-
-
+        ids, documents, metadatas = read_chunks(chunk_file)
+        print(f"{chunk_file}: {len(ids)} chunks")
+        store_chunks(collection, ids, documents, metadatas)
 
 def query_embeddings(collection, query: str):
     print("querying")
