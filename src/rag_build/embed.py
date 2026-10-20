@@ -9,21 +9,26 @@ from cachetools import cached, TTLCache
 
 
 load_dotenv()
-voyage_api_key = os.getenv("VOYAGE_API_KEY")
 
 cache_storage = TTLCache(maxsize=10000, ttl=600)
 
-chroma_client = chromadb.PersistentClient(path = "./chroma_db")
+DEFAULT_DB_PATH = "./chroma_db"
+DEFAULT_COLLECTION = "my_voyage_collection"
 
-voyage_ef = embedding_functions.VoyageAIEmbeddingFunction(
-    api_key=voyage_api_key,
-    model_name="voyage-4-large"
-)
+def get_collection(db_path: str = DEFAULT_DB_PATH, name: str = DEFAULT_COLLECTION):
+    voyage_api_key = os.getenv("VOYAGE_API_KEY")
+    if not voyage_api_key:
+        raise RuntimeError("VOYAGE_API_KEY is not set (add it to .env or the environment)")
 
-collection = chroma_client.get_or_create_collection(
-    name="my_voyage_collection",
-    embedding_function=voyage_ef
-)
+    chroma_client = chromadb.PersistentClient(path=db_path)
+    voyage_ef = embedding_functions.VoyageAIEmbeddingFunction(
+        api_key=voyage_api_key,
+        model_name="voyage-4-large"
+    )
+    return chroma_client.get_or_create_collection(
+        name=name,
+        embedding_function=voyage_ef
+    )
 
 def is_folder_empty(folder_path: str) -> bool:
     path = Path(folder_path)
@@ -32,7 +37,7 @@ def is_folder_empty(folder_path: str) -> bool:
 
 BATCH_SIZE = 100
 
-def read_and_save_chunks(file_path: str):
+def read_and_save_chunks(collection, file_path: str):
     ids, documents, metadatas = [], [], []
     with open(file_path, 'r', encoding="utf-8") as file:
         for line in file:
@@ -62,25 +67,26 @@ def read_and_save_chunks(file_path: str):
 
 
 #@cached(cache_storage)
-def save_embeddings(file_path: str):
+def save_embeddings(collection, file_path: str):
     if not is_folder_empty(file_path):
         return
 
     for chunk_file in Path(file_path).glob("*.jsonl"):
-        data = read_and_save_chunks(chunk_file)
-        
+        data = read_and_save_chunks(collection, chunk_file)
 
 
-def query_embeddings(query: str):
+
+def query_embeddings(collection, query: str):
     print("querying")
     return collection.query(
         query_texts=[query],
         n_results=20
     )
 
-def main(query: str, file_path: str):
-    save_embeddings(file_path)
-    results = query_embeddings(query)
+def main(query: str, file_path: str, db_path: str = DEFAULT_DB_PATH, name: str = DEFAULT_COLLECTION):
+    collection = get_collection(db_path, name)
+    save_embeddings(collection, file_path)
+    results = query_embeddings(collection, query)
     print("received query result")
     print(results)
     for result in results:
@@ -91,7 +97,10 @@ if __name__ == "__main__":
     parser.add_argument("name", type=str, help="query name")
     parser.add_argument("file_path", type=str, help="file path to fetch chunks")
 
+    parser.add_argument("--db-path", type=str, default=DEFAULT_DB_PATH, help="chroma persistence directory")
+    parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION, help="chroma collection name")
+
     args = parser.parse_args()
-    main(args.name, args.file_path)
+    main(args.name, args.file_path, args.db_path, args.collection)
 
 
