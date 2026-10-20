@@ -30,17 +30,30 @@ def is_folder_empty(folder_path: str) -> bool:
     # Checks if the path exists, is a directory, and has no contents
     return path.exists() and path.is_dir() and not any(path.iterdir())
 
+BATCH_SIZE = 100
+
 def read_and_save_chunks(file_path: str):
-    #data = []
+    ids, documents, metadatas = [], [], []
     with open(file_path, 'r', encoding="utf-8") as file:
         for line in file:
             if line.strip():
-                #print(line)
                 chunk_json = json.loads(line)
-                print(chunk_json.get("file"))
-                collection.upsert(documents=chunk_json.get("chunk"), ids=[f"{chunk_json.get("file")}:{chunk_json.get("page")}:{chunk_json.get("chunk_id")}"])
-                #data.append(json.loads(line))
-    #return data
+                ids.append(f"{chunk_json.get('file')}:{chunk_json.get('page')}:{chunk_json.get('chunk_id')}")
+                documents.append(chunk_json.get("chunk"))
+                metadatas.append({
+                    "file": chunk_json.get("file"),
+                    "page": chunk_json.get("page"),
+                    "chunk_id": chunk_json.get("chunk_id"),
+                })
+
+    print(f"{file_path}: {len(ids)} chunks")
+    for start in range(0, len(ids), BATCH_SIZE):
+        end = start + BATCH_SIZE
+        collection.upsert(
+            ids=ids[start:end],
+            documents=documents[start:end],
+            metadatas=metadatas[start:end],
+        )
 
 
 #@cached(cache_storage)
