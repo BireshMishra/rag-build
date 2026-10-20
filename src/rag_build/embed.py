@@ -27,11 +27,6 @@ def get_collection(db_path: str = DEFAULT_DB_PATH, name: str = DEFAULT_COLLECTIO
         embedding_function=voyage_ef
     )
 
-def is_folder_empty(folder_path: str) -> bool:
-    path = Path(folder_path)
-    # Checks if the path exists, is a directory, and has no contents
-    return path.exists() and path.is_dir() and not any(path.iterdir())
-
 BATCH_SIZE = 100
 
 def read_chunks(file_path: str):
@@ -49,7 +44,9 @@ def read_chunks(file_path: str):
                 })
     return ids, documents, metadatas
 
-def store_chunks(collection, ids, documents, metadatas):
+def store_chunks(collection, ids, documents, metadatas) -> int:
+    """Embed and store only chunks whose id is not in the collection yet. Returns how many were stored."""
+    stored = 0
     for start in range(0, len(ids), BATCH_SIZE):
         end = start + BATCH_SIZE
         batch_ids = ids[start:end]
@@ -57,20 +54,28 @@ def store_chunks(collection, ids, documents, metadatas):
         new = [i for i, chunk_id in enumerate(batch_ids) if chunk_id not in existing]
         if not new:
             continue
-        collection.upsert(
+        collection.add(
             ids=[batch_ids[i] for i in new],
             documents=[documents[start + i] for i in new],
             metadatas=[metadatas[start + i] for i in new],
         )
+        stored += len(new)
+    return stored
 
 def save_embeddings(collection, file_path: str):
-    if not is_folder_empty(file_path):
+    folder = Path(file_path)
+    if not folder.is_dir():
+        raise NotADirectoryError(f"chunks folder not found: {file_path}")
+
+    chunk_files = sorted(folder.glob("*.jsonl"))
+    if not chunk_files:
+        print(f"no .jsonl files in {file_path}")
         return
 
-    for chunk_file in Path(file_path).glob("*.jsonl"):
+    for chunk_file in chunk_files:
         ids, documents, metadatas = read_chunks(chunk_file)
-        print(f"{chunk_file}: {len(ids)} chunks")
-        store_chunks(collection, ids, documents, metadatas)
+        stored = store_chunks(collection, ids, documents, metadatas)
+        print(f"{chunk_file}: {len(ids)} chunks, {stored} new, {len(ids) - stored} already stored")
 
 def query_embeddings(collection, query: str):
     print("querying")
