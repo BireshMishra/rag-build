@@ -2,6 +2,7 @@ import os
 import chromadb
 import argparse
 import json
+import sys
 from chromadb.utils import embedding_functions
 from pathlib import Path
 from dotenv import load_dotenv
@@ -12,19 +13,20 @@ load_dotenv()
 DEFAULT_DB_PATH = "./chroma_db"
 DEFAULT_COLLECTION = "my_voyage_collection"
 
-def get_collection(db_path: str = DEFAULT_DB_PATH, name: str = DEFAULT_COLLECTION):
-    voyage_api_key = os.getenv("VOYAGE_API_KEY")
-    if not voyage_api_key:
-        raise RuntimeError("VOYAGE_API_KEY is not set (add it to .env or the environment)")
+def get_collection(db_path: str = DEFAULT_DB_PATH, name: str = DEFAULT_COLLECTION, embedding_function=None):
+    if embedding_function is None:
+        voyage_api_key = os.getenv("VOYAGE_API_KEY")
+        if not voyage_api_key:
+            raise RuntimeError("VOYAGE_API_KEY is not set (add it to .env or the environment)")
+        embedding_function = embedding_functions.VoyageAIEmbeddingFunction(
+            api_key=voyage_api_key,
+            model_name="voyage-4-large"
+        )
 
     chroma_client = chromadb.PersistentClient(path=db_path)
-    voyage_ef = embedding_functions.VoyageAIEmbeddingFunction(
-        api_key=voyage_api_key,
-        model_name="voyage-4-large"
-    )
     return chroma_client.get_or_create_collection(
         name=name,
-        embedding_function=voyage_ef
+        embedding_function=embedding_function
     )
 
 BATCH_SIZE = 100
@@ -77,21 +79,32 @@ def save_embeddings(collection, file_path: str):
         stored = store_chunks(collection, ids, documents, metadatas)
         print(f"{chunk_file}: {len(ids)} chunks, {stored} new, {len(ids) - stored} already stored")
 
-def query_embeddings(collection, query: str):
-    print("querying")
+def query_embeddings(collection, query: str, n_results: int = 20):
     return collection.query(
         query_texts=[query],
-        n_results=20
+        n_results=n_results
     )
 
-def main(query: str, file_path: str, db_path: str = DEFAULT_DB_PATH, name: str = DEFAULT_COLLECTION):
+def format_results(results: dict, snippet_len: int = 200) -> list[str]:
+    # query() nests every field per query text; we send one query, so take [0]
+    rows = zip(
+        results["ids"][0],
+        results["distances"][0],
+        results["documents"][0],
+        results["metadatas"][0],
+    )
+    return [
+        f"{rank}. {chunk_id} (file={meta['file']}, page={meta['page']}, distance={distance:.4f})\n"
+        f"   {document[:snippet_len]!r}"
+        for rank, (chunk_id, distance, document, meta) in enumerate(rows, 1)
+    ]
+
+def main(query: str, file_path: str, db_path: str = DEFAULT_DB_PATH, name: str = DEFAULT_COLLECTION, top_k: int = 20):
     collection = get_collection(db_path, name)
     save_embeddings(collection, file_path)
-    results = query_embeddings(collection, query)
-    print("received query result")
-    print(results)
-    for result in results:
-        print(result[0:200])
+    print(f"collection '{name}' holds {collection.count()} chunks")
+    for line in format_results(query_embeddings(collection, query, top_k)):
+        print(line)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -101,7 +114,14 @@ if __name__ == "__main__":
     parser.add_argument("--db-path", type=str, default=DEFAULT_DB_PATH, help="chroma persistence directory")
     parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION, help="chroma collection name")
 
+    parser.add_argument("--top-k", type=int, default=20, help="number of results to print")
+
     args = parser.parse_args()
-    main(args.name, args.file_path, args.db_path, args.collection)
+    # Windows consoles default to cp1252 and choke on characters from PDFs
+    sys.stdout.reconfigure(errors="replace")
+    try:
+        main(args.name, args.file_path, args.db_path, args.collection, args.top_k)
+    except Exception as error:
+        sys.exit(f"error: {error}")
 
 
