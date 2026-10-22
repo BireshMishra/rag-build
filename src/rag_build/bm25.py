@@ -1,6 +1,7 @@
 import bm25s
 import chromadb
 import argparse
+import sys
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -19,7 +20,7 @@ def load_chunks(db_path: str = DEFAULT_DB_PATH, name: str = DEFAULT_COLLECTION):
         ids, documents, metadatas = data["ids"], data["documents"], data["metadatas"]
         return ids, documents, metadatas
     except Exception as e:
-        print(f"Exception while loading chunks: {e}. Run embed.py first.")
+        raise RuntimeError(f"could not load chunks from '{name}' in {db_path}: {e}. Run embed.py first.") from e
 
 
 def build_index(documents: list[str]) -> bm25s.BM25:
@@ -29,7 +30,8 @@ def build_index(documents: list[str]) -> bm25s.BM25:
     return retriever
 
 
-def search(retriever: bm25s.BM25, query: str, ids: list[str], documents: list[str], k: int = 2) -> list[dict]:
+def search(retriever: bm25s.BM25, query: str, ids: list[str], documents: list[str], k: int = 20) -> list[dict]:
+    k = min(k, len(ids))
     query_tokens = bm25s.tokenize(query, lower=True)
     indices, scores = retriever.retrieve(query_tokens, k=k)
 
@@ -41,11 +43,15 @@ def search(retriever: bm25s.BM25, query: str, ids: list[str], documents: list[st
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("query", type=str, help="query to get tokens for")
-    parser.add_argument("--db-path", type=str, help="db path")
-    parser.add_argument("--collection", type=str, help="collection")
+    parser.add_argument("--db-path", type=str, default=DEFAULT_DB_PATH, help="db path")
+    parser.add_argument("--collection", type=str, default=DEFAULT_COLLECTION, help="collection")
     args = parser.parse_args()
     print(f"query arg is: {args.query}")
-    ids, documents, metadatas = load_chunks()
-    retriever = build_index(documents)
-    for result in search(retriever, args.query, ids, documents):
+    try:
+        ids, documents, metadatas = load_chunks(args.db_path, args.collection)
+        retriever = build_index(documents)
+        results = search(retriever, args.query, ids, documents)
+    except Exception as error:
+        sys.exit(f"error: {error}")
+    for result in results:
         print(f"Score: {result['score']: .4f} | Document {result['document']}")
