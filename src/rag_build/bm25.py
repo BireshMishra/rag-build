@@ -22,15 +22,16 @@ def load_chunks(db_path: str = DEFAULT_DB_PATH, name: str = DEFAULT_COLLECTION):
         print(f"Exception while loading chunks: {e}. Run embed.py first.")
 
 
-def get_bm25_result(query: str, k: int = 2) -> list[dict]:
-    ids, documents, metadatas = load_chunks()
+def build_index(documents: list[str]) -> bm25s.BM25:
     corpus_tokens = bm25s.tokenize(documents, lower=True)
+    retriever = bm25s.BM25(method="lucene")
+    retriever.index(corpus_tokens)
+    return retriever
+
+
+def search(retriever: bm25s.BM25, query: str, ids: list[str], documents: list[str], k: int = 2) -> list[dict]:
     query_tokens = bm25s.tokenize(query, lower=True)
-
-    retrievar = bm25s.BM25(method="lucene")
-    retrievar.index(corpus_tokens)
-
-    indices, scores = retrievar.retrieve(query_tokens, k=k)
+    indices, scores = retriever.retrieve(query_tokens, k=k)
 
     return [
         {"id": ids[i], "document": documents[i], "score": float(score)}
@@ -44,5 +45,7 @@ if __name__ == "__main__":
     parser.add_argument("--collection", type=str, help="collection")
     args = parser.parse_args()
     print(f"query arg is: {args.query}")
-    for result in get_bm25_result(args.query):
+    ids, documents, metadatas = load_chunks()
+    retriever = build_index(documents)
+    for result in search(retriever, args.query, ids, documents):
         print(f"Score: {result['score']: .4f} | Document {result['document']}")
