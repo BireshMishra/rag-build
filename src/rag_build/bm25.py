@@ -19,24 +19,25 @@ def get_collection(db_path: str = DEFAULT_DB_PATH, name: str = DEFAULT_COLLECTIO
     return ids, documents, metadatas
 
 
-def get_bm25_result(query: str):
-    print("getting collection")
+def get_bm25_result(query: str, k: int = 2) -> list[dict]:
     ids, documents, metadatas = get_collection()
-    print("got collection")
     corpus_tokens = bm25s.tokenize(documents, lower=True)
     query_tokens = bm25s.tokenize(query, lower=True)
 
     retrievar = bm25s.BM25(method="lucene")
     retrievar.index(corpus_tokens)
 
-    results, scores = retrievar.retrieve(query_tokens, corpus=documents, k=2)
+    indices, scores = retrievar.retrieve(query_tokens, k=k)
 
-    for doc, score in zip(results[0], scores[0]):
-        print(f"Score: {score: .4f} | Document {doc}")
+    return [
+        {"id": ids[i], "document": documents[i], "score": float(score)}
+        for i, score in zip(indices[0], scores[0])
+    ]
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--query", type=str, help="query to get tokens for")
     args = parser.parse_args()
     print(f"query arg is: {args.query}")
-    get_bm25_result(args.query)
+    for result in get_bm25_result(args.query):
+        print(f"Score: {result['score']: .4f} | Document {result['document']}")
